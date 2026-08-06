@@ -117,6 +117,16 @@ function get_(obj, path, fallback) {
   return current === null || current === undefined ? fallback : current;
 }
 
+var FORMATO_DATA_HORA = 'dd/mm/yyyy hh:mm:ss';
+
+/** Converte uma string de data da API (ISO 8601) em um Date real do Sheets */
+function parseData_(valor) {
+  if (!valor) return '';
+  var data = new Date(valor);
+  if (isNaN(data.getTime())) return valor; // não era uma data válida, mantém como texto
+  return data;
+}
+
 function sincronizarRDStation() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -140,10 +150,10 @@ function escreverTasks_(ss, tasks) {
       get_(task, 'type'),
       get_(task, 'hour'),
       get_(task, 'status'),
-      get_(task, 'date'),
-      get_(task, 'created_at'),
+      parseData_(get_(task, 'date')),
+      parseData_(get_(task, 'created_at')),
       get_(task, 'done'),
-      get_(task, 'done_date'),
+      parseData_(get_(task, 'done_date')),
       get_(task, 'deal.name'),
       get_(task, 'deal.rating'),
       get_(usuario, 'name'),
@@ -151,7 +161,8 @@ function escreverTasks_(ss, tasks) {
     ];
   });
 
-  escreverAba_(ss, 'Tasks', headers, rows);
+  // Colunas de data/hora (1-based): 7=Data, 8=Criado em, 10=Data Conclusão
+  escreverAba_(ss, 'Tasks', headers, rows, [7, 8, 10]);
 }
 
 function escreverDeals_(ss, deals) {
@@ -179,8 +190,8 @@ function escreverDeals_(ss, deals) {
       get_(deal, 'id'),
       get_(deal, 'name'),
       get_(deal, 'amount_total'),
-      get_(deal, 'created_at'),
-      get_(deal, 'updated_at'),
+      parseData_(get_(deal, 'created_at')),
+      parseData_(get_(deal, 'updated_at')),
       get_(deal, 'organization.name'),
       get_(deal, 'organization.address'),
       get_(deal, 'user.name'),
@@ -189,7 +200,7 @@ function escreverDeals_(ss, deals) {
       get_(deal, 'deal_source.name'),
       get_(deal, 'campaign.name'),
       get_(deal, 'next_task.subject'),
-      get_(deal, 'next_task.date')
+      parseData_(get_(deal, 'next_task.date'))
     ];
 
     var customValues = {};
@@ -204,15 +215,19 @@ function escreverDeals_(ss, deals) {
     return row;
   });
 
-  escreverAba_(ss, 'Deals', headers, rows);
+  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 14=Data Próxima Tarefa
+  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 14]);
 }
 
-function escreverAba_(ss, nomeAba, headers, rows) {
+function escreverAba_(ss, nomeAba, headers, rows, colunasData) {
   var sheet = ss.getSheetByName(nomeAba) || ss.insertSheet(nomeAba);
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (rows.length > 0) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    (colunasData || []).forEach(function (coluna) {
+      sheet.getRange(2, coluna, rows.length, 1).setNumberFormat(FORMATO_DATA_HORA);
+    });
   }
 }
 
