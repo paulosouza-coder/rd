@@ -45,7 +45,43 @@ function onOpen() {
     .addItem('Configurar token da API', 'configurarToken')
     .addItem('Agendar sincronização automática (1x por hora)', 'criarGatilhoHorario')
     .addItem('Depurar estrutura da API (ver Logs)', 'depurarEstrutura_')
+    .addItem('Depurar Funis/Etapas (ver Logs)', 'depurarFunis_')
     .addToUi();
+}
+
+/**
+ * Diagnóstico específico do problema "só aparece 1 funil": lista, para todos
+ * os deals coletados, as combinações distintas de etapa/funil encontradas
+ * (e quantas vezes cada uma aparece), e mostra a lista completa retornada
+ * por /deal_stages — para descobrir se esse endpoint só devolve as etapas
+ * de um único funil (o que explicaria o problema).
+ */
+function depurarFunis_() {
+  var deals = fetchAllPages_('deals', 'deals');
+  var stages = fetchAllPages_('deal_stages', 'deal_stages');
+
+  Logger.log('Total de deals coletados: ' + deals.length);
+
+  var combos = {};
+  deals.forEach(function (deal) {
+    var chave = JSON.stringify({
+      deal_stage_nome: get_(deal, 'deal_stage.name'),
+      deal_stage_id: get_(deal, 'deal_stage.id'),
+      deal_pipeline_direto: get_(deal, 'deal_pipeline.name'),
+      deal_pipeline_aninhado: get_(deal, 'deal_stage.deal_pipeline.name')
+    });
+    combos[chave] = (combos[chave] || 0) + 1;
+  });
+
+  Logger.log('===== COMBINAÇÕES DISTINTAS DE ETAPA/FUNIL NOS DEALS =====');
+  Object.keys(combos).forEach(function (chave) {
+    Logger.log(combos[chave] + 'x -> ' + chave);
+  });
+
+  Logger.log('===== TODAS AS ETAPAS RETORNADAS POR /deal_stages (total: ' + stages.length + ') =====');
+  Logger.log(JSON.stringify(stages, null, 2));
+
+  SpreadsheetApp.getUi().alert('Diagnóstico concluído! Veja o resultado em "Execuções" no editor do Apps Script e me envie o conteúdo.');
 }
 
 /**
