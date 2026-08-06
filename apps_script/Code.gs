@@ -167,8 +167,8 @@ function escreverTasks_(ss, tasks) {
 
 function escreverDeals_(ss, deals) {
   var baseHeaders = ['ID', 'Nome', 'Valor Total', 'Data de Criação', 'Última Atualização',
-    'Organização', 'Endereço', 'Usuário Responsável', 'Email Usuário', 'Estágio', 'Fonte',
-    'Campanha', 'Próxima Tarefa', 'Data Próxima Tarefa'];
+    'Organização', 'Endereço', 'Usuário Responsável', 'Email Usuário', 'Funil', 'Estágio',
+    'Status Negociação', 'Fonte', 'Campanha', 'Próxima Tarefa', 'Data Próxima Tarefa'];
 
   // Descobre dinamicamente todos os labels de campos personalizados usados nos deals
   var customLabels = [];
@@ -196,7 +196,9 @@ function escreverDeals_(ss, deals) {
       get_(deal, 'organization.address'),
       get_(deal, 'user.name'),
       get_(deal, 'user.email'),
+      get_(deal, 'deal_stage.deal_pipeline.name'),
       get_(deal, 'deal_stage.name'),
+      statusNegociacao_(deal),
       get_(deal, 'deal_source.name'),
       get_(deal, 'campaign.name'),
       get_(deal, 'next_task.subject'),
@@ -215,8 +217,15 @@ function escreverDeals_(ss, deals) {
     return row;
   });
 
-  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 14=Data Próxima Tarefa
-  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 14]);
+  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 16=Data Próxima Tarefa
+  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 16]);
+}
+
+/** Deriva o status da negociação a partir dos campos "win" e "deal_lost_reason" da API */
+function statusNegociacao_(deal) {
+  if (deal.win === true) return 'Vendida';
+  if (deal.win === false || get_(deal, 'deal_lost_reason.name')) return 'Perdida';
+  return 'Em andamento';
 }
 
 function escreverAba_(ss, nomeAba, headers, rows, colunasData) {
