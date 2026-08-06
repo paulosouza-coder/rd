@@ -46,6 +46,7 @@ function onOpen() {
     .addItem('Agendar sincronização automática (1x por hora)', 'criarGatilhoHorario')
     .addItem('Depurar estrutura da API (ver Logs)', 'depurarEstrutura_')
     .addItem('Depurar Funis/Etapas (ver Logs)', 'depurarFunis_')
+    .addItem('Criar/Atualizar aba METAS', 'garantirAbaMetas_')
     .addToUi();
 }
 
@@ -245,8 +246,9 @@ function escreverTasks_(ss, tasks) {
 
 function escreverDeals_(ss, deals) {
   var baseHeaders = ['ID', 'Nome', 'Valor Total', 'Data de Criação', 'Última Atualização',
-    'Organização', 'Endereço', 'Usuário Responsável', 'Email Usuário', 'Funil', 'Estágio',
-    'Ordem Etapa', 'Status Negociação', 'Fonte', 'Campanha', 'Próxima Tarefa', 'Data Próxima Tarefa'];
+    'Organização', 'Endereço', 'Usuário Responsável', 'ID Usuário Responsável', 'Email Usuário',
+    'Funil', 'ID Funil', 'Estágio', 'Ordem Etapa', 'Status Negociação', 'Fonte', 'Campanha',
+    'Próxima Tarefa', 'Data Próxima Tarefa'];
 
   var mapaEtapas = buscarMapaEtapas_();
 
@@ -275,8 +277,10 @@ function escreverDeals_(ss, deals) {
       get_(deal, 'organization.name'),
       get_(deal, 'organization.address'),
       get_(deal, 'user.name'),
+      get_(deal, 'user.id'),
       get_(deal, 'user.email'),
       nomeFunil_(deal, mapaEtapas),
+      idFunil_(deal, mapaEtapas),
       get_(deal, 'deal_stage.name'),
       ordemEtapa_(deal, mapaEtapas),
       statusNegociacao_(deal),
@@ -298,8 +302,8 @@ function escreverDeals_(ss, deals) {
     return row;
   });
 
-  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 17=Data Próxima Tarefa
-  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 17]);
+  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 19=Data Próxima Tarefa
+  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 19]);
 }
 
 /** Deriva o status da negociação a partir dos campos "win" e "deal_lost_reason" da API */
@@ -315,6 +319,14 @@ function statusNegociacao_(deal) {
 var OUTROS_FUNIS_POR_ID = {
   '67cb2f7d04bf6d00167e4fc4': 'Sucesso do Cliente',
   '67df427fb6a6ee0028d86cae': 'Gestão de Contratos'
+};
+
+// Mapa completo nome -> ID do funil (para gravar "ID Funil" nos deals e casar
+// com a coluna ID_Funil da aba METAS).
+var FUNIL_NOME_PARA_ID = {
+  'Vendas Consultiva': '67cd09d3a4c0590017632c38',
+  'Sucesso do Cliente': '67cb2f7d04bf6d00167e4fc4',
+  'Gestão de Contratos': '67df427fb6a6ee0028d86cae'
 };
 
 /** Mapa id_da_etapa -> {nome, ordem}, cobrindo o funil padrão (via /deal_stages) e os
@@ -378,6 +390,12 @@ function ordemEtapa_(deal, mapaEtapas) {
   return '';
 }
 
+/** ID do funil do deal (para casar com a coluna ID_Funil da aba METAS) */
+function idFunil_(deal, mapaEtapas) {
+  var nome = nomeFunil_(deal, mapaEtapas);
+  return FUNIL_NOME_PARA_ID[nome] || '';
+}
+
 function escreverAba_(ss, nomeAba, headers, rows, colunasData) {
   var sheet = ss.getSheetByName(nomeAba) || ss.insertSheet(nomeAba);
   sheet.clearContents();
@@ -393,20 +411,43 @@ function escreverAba_(ss, nomeAba, headers, rows, colunasData) {
 // ============================================================
 // DASHBOARD "GESTÃO À VISTA" (Web App)
 // ============================================================
-// Painel público (sem valores em R$) publicado como Web App do Apps Script.
-// Para publicar: no editor, "Implantar" > "Nova implantação" > tipo "App da Web".
-// Executar como: "Eu". Quem tem acesso: escolha conforme a sensibilidade
-// (ex: "Qualquer pessoa da [seu domínio]"). Isso gera uma URL fixa que pode
-// ser aberta numa TV/monitor.
+// Painel público publicado como Web App do Apps Script.
+//
+// RESTRIÇÃO DE EXPOSIÇÃO DE VALORES: este dashboard e a função
+// getDadosDashboard() abaixo NUNCA devem ler ou devolver campos monetários
+// (amount_total / "Valor Total" ou qualquer outro valor em R$), mesmo que
+// existam na aba Deals. Só quantidades, percentuais e prazos em dias.
+//
+// Para publicar: no editor, "Implantar" > "Nova implantação" > tipo "App da
+// Web". Executar como: "Eu". Quem tem acesso: escolha conforme a
+// sensibilidade (ex: "Qualquer pessoa da [seu domínio]").
 
 var FUNIS_DISPONIVEIS = ['Todos', 'Vendas Consultiva', 'Sucesso do Cliente', 'Gestão de Contratos'];
 
-// Metas do formulário de KPIs (Win Rate e Taxa de Conversão), usadas só para
-// colorir os cards do dashboard (sem expor valor financeiro nenhum).
-var METAS_KPI = {
-  winRate: { meta: 0.35, minimoAceitavel: 0.25 },
-  taxaConversao: { meta: 0.35, minimoAceitavel: 0.30 }
-};
+// Nomes canônicos de indicador aceitos na coluna Nome_Indicador da aba METAS
+// (lista de "Indicadores iniciais para comparação" definida com o usuário).
+var INDICADORES_CONHECIDOS = [
+  'Quantidade de oportunidades criadas',
+  'Quantidade de empresas prospectadas',
+  'Quantidade de tarefas concluídas',
+  'Quantidade de reuniões realizadas',
+  'Quantidade de propostas enviadas',
+  'Quantidade de negócios ganhos',
+  'Taxa de conversão',
+  'Taxa de cumprimento de tarefas',
+  'Tempo médio de permanência no funil',
+  'Tempo médio de resposta',
+  'Quantidade de tarefas atrasadas',
+  'Percentual de oportunidades sem atividade'
+];
+
+var CABECALHOS_METAS = [
+  'ID_Meta', 'Nome_Indicador', 'Tipo_Indicador', 'Ano', 'Mês', 'Trimestre',
+  'ID_Funil', 'ID_Responsável', 'ID_Empresa', 'Meta_Quantidade', 'Meta_Percentual',
+  'Meta_Prazo_Dias', 'Sentido_Indicador', 'Faixa_Atencao', 'Faixa_Critica',
+  'Data_Inicio_Vigencia', 'Data_Fim_Vigencia', 'Ativo', 'Observação',
+  'Atualizado_Por', 'Data_Atualização'
+];
 
 function doGet(e) {
   return HtmlService.createTemplateFromFile('Dashboard')
@@ -429,6 +470,63 @@ function lerAbaComoObjetos_(nomeAba) {
   });
 }
 
+/** Cria a aba METAS (se ainda não existir) com a estrutura definida, validações e um
+ *  exemplo de preenchimento. Rode pelo menu "RD Station > Criar/Atualizar aba METAS". */
+function garantirAbaMetas_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('METAS');
+  var jaExistia = !!sheet;
+  if (!sheet) sheet = ss.insertSheet('METAS');
+
+  sheet.getRange(1, 1, 1, CABECALHOS_METAS.length).setValues([CABECALHOS_METAS]);
+  sheet.setFrozenRows(1);
+
+  if (!jaExistia) {
+    // Linha de exemplo (meta geral de Taxa de conversão para o mês atual, sem
+    // funil/responsável específico = meta da equipe toda).
+    var agora = new Date();
+    sheet.getRange(2, 1, 1, CABECALHOS_METAS.length).setValues([[
+      'EXEMPLO-001', 'Taxa de conversão', 'Percentual', agora.getFullYear(), agora.getMonth() + 1, '',
+      '', '', '', '', 0.35,
+      '', 'MAIOR_MELHOR', 0.8, 0.6,
+      '', '', true, 'Linha de exemplo — pode apagar esta linha',
+      Session.getActiveUser().getEmail(), agora
+    ]]);
+  }
+
+  // Validações (dropdown) nas colunas de tipo fixo
+  var ultimaLinha = Math.max(sheet.getMaxRows(), 200);
+  sheet.getRange(2, 2, ultimaLinha - 1, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(INDICADORES_CONHECIDOS, true).setAllowInvalid(true).build()
+  );
+  sheet.getRange(2, 3, ultimaLinha - 1, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(
+      ['Quantidade', 'Percentual', 'Prazo', 'Conversão', 'Produtividade', 'Atividade', 'Qualidade'], true
+    ).build()
+  );
+  sheet.getRange(2, 13, ultimaLinha - 1, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['MAIOR_MELHOR', 'MENOR_MELHOR'], true).build()
+  );
+  sheet.getRange(2, 18, ultimaLinha - 1, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireCheckbox().build()
+  );
+
+  sheet.getRange(1, 7).setNote(
+    'IDs dos funis conhecidos:\n' +
+    Object.keys(FUNIL_NOME_PARA_ID).map(function (nome) { return FUNIL_NOME_PARA_ID[nome] + ' = ' + nome; }).join('\n')
+  );
+  sheet.getRange(1, 8).setNote('ID do usuário responsável no RD Station (coluna "ID Usuário Responsável" na aba Deals). Deixe em branco para meta geral da equipe.');
+  sheet.getRange(1, 4).setNote('Preencha Mês OU Trimestre (não os dois) para uma meta específica do período. Deixe ambos em branco para uma meta ANUAL (usada só quando não há meta mais específica pro período).');
+
+  sheet.autoResizeColumns(1, CABECALHOS_METAS.length);
+
+  SpreadsheetApp.getUi().alert(
+    jaExistia
+      ? 'Aba METAS já existia — cabeçalhos e validações atualizados.'
+      : 'Aba METAS criada com uma linha de exemplo. Preencha suas metas reais e apague a linha de exemplo.'
+  );
+}
+
 function limitesPeriodo_(periodo) {
   var agora = new Date();
   if (periodo === 'trimestre') {
@@ -449,29 +547,153 @@ function dentroDoPeriodo_(data, limites) {
   return true;
 }
 
-/** Função chamada pelo dashboard (google.script.run) para buscar os dados já calculados */
+/** true se a data de hoje está dentro da janela de vigência da meta (campos podem ficar vazios = sem limite) */
+function metaVigente_(meta) {
+  var hoje = new Date();
+  if (meta.Data_Inicio_Vigencia instanceof Date && hoje < meta.Data_Inicio_Vigencia) return false;
+  if (meta.Data_Fim_Vigencia instanceof Date && hoje > meta.Data_Fim_Vigencia) return false;
+  return true;
+}
+
+function metaCobrePeriodoEspecifico_(meta, contexto) {
+  if (Number(meta.Ano) !== contexto.ano) return false;
+  if (contexto.periodo === 'mes') return Number(meta.Mês) === contexto.mes;
+  if (contexto.periodo === 'trimestre') return Number(meta.Trimestre) === contexto.trimestre;
+  return false;
+}
+
+function metaAnual_(meta, contexto) {
+  return Number(meta.Ano) === contexto.ano && !meta.Mês && !meta.Trimestre;
+}
+
+/**
+ * Busca a meta aplicável para um indicador, seguindo a ordem de prioridade definida:
+ * 1) responsável + funil + período · 2) responsável + período · 3) funil + período ·
+ * 4) geral + período · 5) meta anual do indicador · 6) sem meta cadastrada (null).
+ */
+function buscarMeta_(nomeIndicador, contexto, todasMetas) {
+  var ativas = todasMetas.filter(function (m) {
+    return m.Ativo === true && m.Nome_Indicador === nomeIndicador && metaVigente_(m);
+  });
+
+  if (contexto.periodo !== 'tudo') {
+    var doPeriodo = ativas.filter(function (m) { return metaCobrePeriodoEspecifico_(m, contexto); });
+
+    var comFunil = contexto.funilId ? doPeriodo.filter(function (m) { return m.ID_Funil === contexto.funilId; }) : [];
+    var semFunil = doPeriodo.filter(function (m) { return !m.ID_Funil; });
+    var comResp = contexto.responsavelId ? doPeriodo.filter(function (m) { return String(m['ID_Responsável']) === String(contexto.responsavelId); }) : [];
+
+    var nivel1 = comResp.filter(function (m) { return contexto.funilId && m.ID_Funil === contexto.funilId; })[0];
+    if (nivel1) return nivel1;
+
+    var nivel2 = comResp.filter(function (m) { return !m.ID_Funil; })[0];
+    if (nivel2) return nivel2;
+
+    var nivel3 = comFunil.filter(function (m) { return !m['ID_Responsável']; })[0];
+    if (nivel3) return nivel3;
+
+    var nivel4 = semFunil.filter(function (m) { return !m['ID_Responsável']; })[0];
+    if (nivel4) return nivel4;
+  }
+
+  var anual = ativas.filter(function (m) {
+    return metaAnual_(m, contexto) && !m.ID_Funil && !m['ID_Responsável'];
+  })[0];
+  if (anual) return anual;
+
+  return null;
+}
+
+/** Extrai o valor-alvo numérico da meta, conforme o Tipo_Indicador */
+function valorAlvoDaMeta_(meta) {
+  if (!meta) return null;
+  if (meta.Tipo_Indicador === 'Percentual' || meta.Tipo_Indicador === 'Conversão') return Number(meta.Meta_Percentual) || null;
+  if (meta.Tipo_Indicador === 'Prazo') return Number(meta.Meta_Prazo_Dias) || null;
+  return Number(meta.Meta_Quantidade) || null;
+}
+
+/** % de atingimento, respeitando o sentido (maior-melhor / menor-melhor) */
+function calcularAtingimento_(resultado, meta) {
+  var alvo = valorAlvoDaMeta_(meta);
+  if (alvo === null || alvo <= 0) return null;
+  if (meta.Sentido_Indicador === 'MENOR_MELHOR') {
+    return resultado > 0 ? alvo / resultado : 1;
+  }
+  return resultado / alvo;
+}
+
+function statusPorFaixas_(atingimento, meta) {
+  if (atingimento === null || !meta) return 'neutro';
+  var faixaCritica = Number(meta.Faixa_Critica) || 0;
+  var faixaAtencao = Number(meta.Faixa_Atencao) || 0;
+  if (faixaCritica && atingimento < faixaCritica) return 'critico';
+  if (faixaAtencao && atingimento < faixaAtencao) return 'atencao';
+  return 'bom';
+}
+
+/** Monta o objeto {resultado, meta, atingimento, status} devolvido ao dashboard para um indicador */
+function montarIndicadorComMeta_(nomeIndicador, resultado, contexto, todasMetas) {
+  var meta = buscarMeta_(nomeIndicador, contexto, todasMetas);
+  var atingimento = meta ? calcularAtingimento_(resultado, meta) : null;
+  return {
+    resultado: resultado,
+    metaEncontrada: !!meta,
+    valorAlvo: valorAlvoDaMeta_(meta),
+    tipoIndicador: meta ? meta.Tipo_Indicador : null,
+    atingimento: atingimento,
+    status: statusPorFaixas_(atingimento, meta)
+  };
+}
+
+/** Função chamada pelo dashboard (google.script.run) para buscar os dados já calculados.
+ *  IMPORTANTE: nunca ler/expor "Valor Total" (amount_total) aqui — só quantidades, % e dias. */
 function getDadosDashboard(funilSelecionado, periodo) {
   var deals = lerAbaComoObjetos_('Deals');
   var tasks = lerAbaComoObjetos_('Tasks');
+  var todasMetas = lerAbaComoObjetos_('METAS');
   var limites = limitesPeriodo_(periodo);
+
+  var idFunilSelecionado = (funilSelecionado && funilSelecionado !== 'Todos')
+    ? FUNIL_NOME_PARA_ID[funilSelecionado] : '';
 
   if (funilSelecionado && funilSelecionado !== 'Todos') {
     deals = deals.filter(function (d) { return d['Funil'] === funilSelecionado; });
   }
 
+  var agora = new Date();
+  var contexto = {
+    ano: agora.getFullYear(),
+    mes: agora.getMonth() + 1,
+    trimestre: Math.floor(agora.getMonth() / 3) + 1,
+    periodo: periodo,
+    funilId: idFunilSelecionado,
+    responsavelId: null
+  };
+
   var abertos = deals.filter(function (d) { return d['Status Negociação'] === 'Em andamento'; });
   var vendidosPeriodo = deals.filter(function (d) {
     return d['Status Negociação'] === 'Vendida' && dentroDoPeriodo_(d['Última Atualização'], limites);
   });
-  var perdidosPeriodo = deals.filter(function (d) {
-    return d['Status Negociação'] === 'Perdida' && dentroDoPeriodo_(d['Última Atualização'], limites);
-  });
   var criadosPeriodo = deals.filter(function (d) { return dentroDoPeriodo_(d['Data de Criação'], limites); });
   var vendidosCriadosPeriodo = criadosPeriodo.filter(function (d) { return d['Status Negociação'] === 'Vendida'; });
 
-  var fechadosPeriodo = vendidosPeriodo.length + perdidosPeriodo.length;
-  var winRate = fechadosPeriodo > 0 ? vendidosPeriodo.length / fechadosPeriodo : 0;
   var taxaConversao = criadosPeriodo.length > 0 ? vendidosCriadosPeriodo.length / criadosPeriodo.length : 0;
+
+  // Empresas em acompanhamento: organizações distintas com negócio em aberto
+  var empresas = {};
+  abertos.forEach(function (d) {
+    var nomeOrg = d['Organização'];
+    if (nomeOrg) empresas[nomeOrg] = true;
+  });
+
+  // Tempo médio no funil: idade média (em dias) dos negócios em aberto — não temos
+  // histórico de troca de etapa via API, então é a permanência desde a criação.
+  var idadesDias = abertos
+    .filter(function (d) { return d['Data de Criação'] instanceof Date; })
+    .map(function (d) { return (agora - d['Data de Criação']) / (1000 * 60 * 60 * 24); });
+  var tempoMedioFunilDias = idadesDias.length > 0
+    ? idadesDias.reduce(function (soma, dias) { return soma + dias; }, 0) / idadesDias.length
+    : 0;
 
   var porEtapa = {};
   abertos.forEach(function (d) {
@@ -485,22 +707,22 @@ function getDadosDashboard(funilSelecionado, periodo) {
     .sort(function (a, b) { return a.ordem - b.ordem; });
 
   var tarefasPendentes = tasks.filter(function (t) { return t['Feito'] === false; });
-  var hoje = new Date();
   var tarefasAtrasadas = tarefasPendentes.filter(function (t) {
-    return t['Data'] instanceof Date && t['Data'] < hoje;
+    return t['Data'] instanceof Date && t['Data'] < agora;
   });
 
   return {
     atualizadoEm: Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm'),
     funisDisponiveis: FUNIS_DISPONIVEIS,
-    metas: METAS_KPI,
-    negociosAbertos: abertos.length,
-    negociosVendidos: vendidosPeriodo.length,
-    negociosPerdidos: perdidosPeriodo.length,
-    winRate: winRate,
-    taxaConversao: taxaConversao,
-    tarefasPendentes: tarefasPendentes.length,
-    tarefasAtrasadas: tarefasAtrasadas.length,
+
+    oportunidadesAbertas: montarIndicadorComMeta_('Quantidade de oportunidades criadas', abertos.length, contexto, todasMetas),
+    empresasAcompanhamento: montarIndicadorComMeta_('Quantidade de empresas prospectadas', Object.keys(empresas).length, contexto, todasMetas),
+    taxaConversao: montarIndicadorComMeta_('Taxa de conversão', taxaConversao, contexto, todasMetas),
+    negociosGanhos: montarIndicadorComMeta_('Quantidade de negócios ganhos', vendidosPeriodo.length, contexto, todasMetas),
+    tarefasPendentes: { resultado: tarefasPendentes.length },
+    tarefasAtrasadas: montarIndicadorComMeta_('Quantidade de tarefas atrasadas', tarefasAtrasadas.length, contexto, todasMetas),
+    tempoMedioFunil: montarIndicadorComMeta_('Tempo médio de permanência no funil', tempoMedioFunilDias, contexto, todasMetas),
+
     funil: funil
   };
 }

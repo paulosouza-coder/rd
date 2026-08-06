@@ -216,11 +216,24 @@
     return (v * 100).toFixed(0) + '%';
   }
 
-  function corMeta(valor, metaInfo) {
-    if (!metaInfo) return '';
-    if (valor >= metaInfo.meta) return 'cor-good';
-    if (valor >= metaInfo.minimoAceitavel) return 'cor-accent';
-    return 'cor-critical';
+  function statusParaClasse(status) {
+    if (status === 'bom') return 'cor-good';
+    if (status === 'atencao') return 'cor-accent';
+    if (status === 'critico') return 'cor-critical';
+    return '';
+  }
+
+  function formatarValorMeta(valorAlvo, tipoIndicador) {
+    if (tipoIndicador === 'Percentual' || tipoIndicador === 'Conversão') return formatarPercentual(valorAlvo);
+    if (tipoIndicador === 'Prazo') return valorAlvo.toFixed(0) + ' dia(s)';
+    return Math.round(valorAlvo);
+  }
+
+  function notaIndicador(indicador) {
+    if (!indicador.metaEncontrada) return 'Meta não cadastrada';
+    var partes = ['Meta: ' + formatarValorMeta(indicador.valorAlvo, indicador.tipoIndicador)];
+    if (indicador.atingimento !== null) partes.push(formatarPercentual(indicador.atingimento) + ' da meta');
+    return partes.join(' · ');
   }
 
   function montarCard(rotulo, valor, opcoes) {
@@ -234,25 +247,42 @@
     return div;
   }
 
+  /** Card de um indicador com meta associada (aba METAS) */
+  function montarCardIndicador(rotulo, indicador, formatoResultado) {
+    var valorFormatado;
+    if (formatoResultado === 'percentual') valorFormatado = formatarPercentual(indicador.resultado);
+    else if (formatoResultado === 'dias') valorFormatado = indicador.resultado.toFixed(1) + ' dia(s)';
+    else valorFormatado = indicador.resultado;
+
+    return montarCard(rotulo, valorFormatado, {
+      classe: statusParaClasse(indicador.status),
+      nota: notaIndicador(indicador)
+    });
+  }
+
+  /** Card #4: percentual de atingimento da meta, usando Negócios Ganhos como indicador acompanhado */
+  function montarCardAtingimento(indicador) {
+    if (!indicador.metaEncontrada || indicador.atingimento === null) {
+      return montarCard('Atingimento da meta (Negócios Ganhos)', '—', { nota: 'Meta não cadastrada' });
+    }
+    return montarCard('Atingimento da meta (Negócios Ganhos)', formatarPercentual(indicador.atingimento), {
+      classe: statusParaClasse(indicador.status),
+      nota: indicador.resultado + ' / meta ' + formatarValorMeta(indicador.valorAlvo, indicador.tipoIndicador)
+    });
+  }
+
   function renderizarCards(dados) {
     var container = document.getElementById('cards');
     container.innerHTML = '';
 
-    container.appendChild(montarCard('Negócios em aberto', dados.negociosAbertos, { classe: 'cor-accent' }));
-    container.appendChild(montarCard('Vendidos no período', dados.negociosVendidos, { classe: 'cor-good' }));
-    container.appendChild(montarCard('Perdidos no período', dados.negociosPerdidos, { classe: 'cor-critical' }));
-    container.appendChild(montarCard('Win Rate', formatarPercentual(dados.winRate), {
-      classe: corMeta(dados.winRate, dados.metas.winRate),
-      nota: 'Meta: ' + formatarPercentual(dados.metas.winRate.meta)
-    }));
-    container.appendChild(montarCard('Taxa de Conversão', formatarPercentual(dados.taxaConversao), {
-      classe: corMeta(dados.taxaConversao, dados.metas.taxaConversao),
-      nota: 'Meta: ' + formatarPercentual(dados.metas.taxaConversao.meta)
-    }));
-    container.appendChild(montarCard('Tarefas pendentes', dados.tarefasPendentes));
-    container.appendChild(montarCard('Tarefas atrasadas', dados.tarefasAtrasadas, {
-      classe: dados.tarefasAtrasadas > 0 ? 'cor-critical' : ''
-    }));
+    container.appendChild(montarCardIndicador('Oportunidades em aberto', dados.oportunidadesAbertas, 'inteiro'));
+    container.appendChild(montarCardIndicador('Empresas em acompanhamento', dados.empresasAcompanhamento, 'inteiro'));
+    container.appendChild(montarCardIndicador('Taxa de conversão', dados.taxaConversao, 'percentual'));
+    container.appendChild(montarCardAtingimento(dados.negociosGanhos));
+    container.appendChild(montarCard('Tarefas pendentes', dados.tarefasPendentes.resultado));
+    container.appendChild(montarCardIndicador('Tarefas atrasadas', dados.tarefasAtrasadas, 'inteiro'));
+    container.appendChild(montarCardIndicador('Negócios ganhos', dados.negociosGanhos, 'inteiro'));
+    container.appendChild(montarCardIndicador('Tempo médio no funil', dados.tempoMedioFunil, 'dias'));
   }
 
   function renderizarFunil(funil) {
