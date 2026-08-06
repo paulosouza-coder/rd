@@ -1,0 +1,311 @@
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-page:   #0d0d0d;
+    --surface-card:   #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --border:         rgba(255,255,255,0.10);
+    --gridline:       #2c2c2a;
+
+    --accent:         #3987e5; /* categorical slot 1, dark step */
+    --good:           #0ca30c;
+    --critical:       #d03b3b;
+
+    /* Rampa sequencial azul (ordinal), do mais claro ao mais escuro,
+       usada para dar profundidade às etapas do funil */
+    --seq-1: #cde2fb;
+    --seq-2: #9ec5f4;
+    --seq-3: #6da7ec;
+    --seq-4: #3987e5;
+    --seq-5: #2a78d6;
+    --seq-6: #256abf;
+    --seq-7: #1c5cab;
+    --seq-8: #184f95;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  body {
+    padding: 20px clamp(16px, 3vw, 40px) 32px;
+  }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    font-size: clamp(20px, 2.4vw, 30px);
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .subtitulo {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .filtros {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  select {
+    background: var(--surface-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+
+  .card .rotulo {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .card .valor {
+    font-size: clamp(28px, 3.4vw, 40px);
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: proportional-nums;
+  }
+
+  .card .nota {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .card.cor-good .valor { color: var(--good); }
+  .card.cor-critical .valor { color: var(--critical); }
+  .card.cor-accent .valor { color: var(--accent); }
+
+  section.painel {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+    margin-bottom: 24px;
+  }
+
+  section.painel h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 18px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .etapa-linha {
+    display: grid;
+    grid-template-columns: minmax(120px, 220px) 1fr auto;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+
+  .etapa-nome {
+    font-size: 14px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .etapa-trilho {
+    background: var(--gridline);
+    border-radius: 4px;
+    height: 24px;
+    position: relative;
+  }
+
+  .etapa-barra {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+  }
+
+  .etapa-qtd {
+    font-size: 15px;
+    font-weight: 600;
+    min-width: 34px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vazio {
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 12px 0;
+  }
+
+  footer {
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  @media (max-width: 640px) {
+    .etapa-linha { grid-template-columns: 90px 1fr auto; }
+  }
+</style>
+
+<header>
+  <div>
+    <h1>Gestão à Vista — Comercial</h1>
+    <div class="subtitulo" id="atualizadoEm">Carregando…</div>
+  </div>
+  <div class="filtros">
+    <select id="filtroFunil"></select>
+    <select id="filtroPeriodo">
+      <option value="mes">Mês atual</option>
+      <option value="trimestre">Trimestre atual</option>
+      <option value="tudo">Tudo</option>
+    </select>
+  </div>
+</header>
+
+<div class="cards" id="cards"></div>
+
+<section class="painel">
+  <h2>Funil de vendas — negócios em aberto por etapa</h2>
+  <div id="funil"></div>
+</section>
+
+<footer>Atualiza automaticamente a cada 5 minutos · sem valores financeiros exibidos</footer>
+
+<script>
+  var RAMPA_SEQ = ['seq-1', 'seq-2', 'seq-3', 'seq-4', 'seq-5', 'seq-6', 'seq-7', 'seq-8'];
+
+  function formatarPercentual(v) {
+    return (v * 100).toFixed(0) + '%';
+  }
+
+  function corMeta(valor, metaInfo) {
+    if (!metaInfo) return '';
+    if (valor >= metaInfo.meta) return 'cor-good';
+    if (valor >= metaInfo.minimoAceitavel) return 'cor-accent';
+    return 'cor-critical';
+  }
+
+  function montarCard(rotulo, valor, opcoes) {
+    opcoes = opcoes || {};
+    var div = document.createElement('div');
+    div.className = 'card' + (opcoes.classe ? ' ' + opcoes.classe : '');
+    div.innerHTML =
+      '<div class="rotulo">' + rotulo + '</div>' +
+      '<div class="valor">' + valor + '</div>' +
+      (opcoes.nota ? '<div class="nota">' + opcoes.nota + '</div>' : '');
+    return div;
+  }
+
+  function renderizarCards(dados) {
+    var container = document.getElementById('cards');
+    container.innerHTML = '';
+
+    container.appendChild(montarCard('Negócios em aberto', dados.negociosAbertos, { classe: 'cor-accent' }));
+    container.appendChild(montarCard('Vendidos no período', dados.negociosVendidos, { classe: 'cor-good' }));
+    container.appendChild(montarCard('Perdidos no período', dados.negociosPerdidos, { classe: 'cor-critical' }));
+    container.appendChild(montarCard('Win Rate', formatarPercentual(dados.winRate), {
+      classe: corMeta(dados.winRate, dados.metas.winRate),
+      nota: 'Meta: ' + formatarPercentual(dados.metas.winRate.meta)
+    }));
+    container.appendChild(montarCard('Taxa de Conversão', formatarPercentual(dados.taxaConversao), {
+      classe: corMeta(dados.taxaConversao, dados.metas.taxaConversao),
+      nota: 'Meta: ' + formatarPercentual(dados.metas.taxaConversao.meta)
+    }));
+    container.appendChild(montarCard('Tarefas pendentes', dados.tarefasPendentes));
+    container.appendChild(montarCard('Tarefas atrasadas', dados.tarefasAtrasadas, {
+      classe: dados.tarefasAtrasadas > 0 ? 'cor-critical' : ''
+    }));
+  }
+
+  function renderizarFunil(funil) {
+    var container = document.getElementById('funil');
+    container.innerHTML = '';
+
+    if (!funil.length) {
+      container.innerHTML = '<div class="vazio">Nenhum negócio em aberto para esse filtro.</div>';
+      return;
+    }
+
+    var maxQtd = Math.max.apply(null, funil.map(function (e) { return e.quantidade; }));
+
+    funil.forEach(function (etapa, i) {
+      var linha = document.createElement('div');
+      linha.className = 'etapa-linha';
+
+      var largura = maxQtd > 0 ? Math.max((etapa.quantidade / maxQtd) * 100, 4) : 0;
+      var corVar = 'var(--' + RAMPA_SEQ[Math.min(i, RAMPA_SEQ.length - 1)] + ')';
+
+      linha.innerHTML =
+        '<div class="etapa-nome" title="' + etapa.etapa + '">' + etapa.etapa + '</div>' +
+        '<div class="etapa-trilho"><div class="etapa-barra" style="width:' + largura + '%; background:' + corVar + ';" title="' + etapa.quantidade + ' negócio(s)"></div></div>' +
+        '<div class="etapa-qtd">' + etapa.quantidade + '</div>';
+
+      container.appendChild(linha);
+    });
+  }
+
+  function carregar() {
+    var funil = document.getElementById('filtroFunil').value;
+    var periodo = document.getElementById('filtroPeriodo').value;
+    google.script.run.withSuccessHandler(function (dados) {
+      document.getElementById('atualizadoEm').textContent = 'Atualizado às ' + dados.atualizadoEm;
+      renderizarCards(dados);
+      renderizarFunil(dados.funil);
+
+      var selectFunil = document.getElementById('filtroFunil');
+      if (!selectFunil.options.length) {
+        dados.funisDisponiveis.forEach(function (nome) {
+          var opt = document.createElement('option');
+          opt.value = nome;
+          opt.textContent = nome;
+          selectFunil.appendChild(opt);
+        });
+        selectFunil.value = funil || 'Todos';
+      }
+    }).getDadosDashboard(funil, periodo);
+  }
+
+  document.getElementById('filtroFunil').addEventListener('change', carregar);
+  document.getElementById('filtroPeriodo').addEventListener('change', carregar);
+
+  carregar();
+  setInterval(carregar, 5 * 60 * 1000);
+</script>

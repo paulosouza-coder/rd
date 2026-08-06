@@ -246,9 +246,9 @@ function escreverTasks_(ss, tasks) {
 function escreverDeals_(ss, deals) {
   var baseHeaders = ['ID', 'Nome', 'Valor Total', 'Data de Criação', 'Última Atualização',
     'Organização', 'Endereço', 'Usuário Responsável', 'Email Usuário', 'Funil', 'Estágio',
-    'Status Negociação', 'Fonte', 'Campanha', 'Próxima Tarefa', 'Data Próxima Tarefa'];
+    'Ordem Etapa', 'Status Negociação', 'Fonte', 'Campanha', 'Próxima Tarefa', 'Data Próxima Tarefa'];
 
-  var mapaEtapas = buscarMapaFunis_();
+  var mapaEtapas = buscarMapaEtapas_();
 
   // Descobre dinamicamente todos os labels de campos personalizados usados nos deals
   var customLabels = [];
@@ -278,6 +278,7 @@ function escreverDeals_(ss, deals) {
       get_(deal, 'user.email'),
       nomeFunil_(deal, mapaEtapas),
       get_(deal, 'deal_stage.name'),
+      ordemEtapa_(deal, mapaEtapas),
       statusNegociacao_(deal),
       get_(deal, 'deal_source.name'),
       get_(deal, 'campaign.name'),
@@ -297,8 +298,8 @@ function escreverDeals_(ss, deals) {
     return row;
   });
 
-  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 16=Data Próxima Tarefa
-  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 16]);
+  // Colunas de data/hora (1-based): 4=Data de Criação, 5=Última Atualização, 17=Data Próxima Tarefa
+  escreverAba_(ss, 'Deals', headers, rows, [4, 5, 17]);
 }
 
 /** Deriva o status da negociação a partir dos campos "win" e "deal_lost_reason" da API */
@@ -316,16 +317,19 @@ var OUTROS_FUNIS_POR_ID = {
   '67df427fb6a6ee0028d86cae': 'Gestão de Contratos'
 };
 
-/** Mapa id_da_etapa -> nome do funil, cobrindo o funil padrão (via /deal_stages) e os
+/** Mapa id_da_etapa -> {nome, ordem}, cobrindo o funil padrão (via /deal_stages) e os
  *  demais funis da conta (via /deal_pipelines/{id}), como fallback para quando o funil
- *  não vem aninhado diretamente no deal. */
-function buscarMapaFunis_() {
+ *  não vem aninhado diretamente no deal. A ordem é usada para desenhar o funil no
+ *  dashboard na sequência certa das etapas. */
+function buscarMapaEtapas_() {
   var mapa = {};
 
   var stagesPadrao = fetchAllPages_('deal_stages', 'deal_stages');
   (stagesPadrao || []).forEach(function (stage) {
     var nomeFunil = get_(stage, 'deal_pipeline.name') || get_(stage, 'deal_pipeline_name');
-    if (stage && stage.id && nomeFunil) mapa[stage.id] = nomeFunil;
+    if (stage && stage.id && nomeFunil) {
+      mapa[stage.id] = { nome: nomeFunil, ordem: get_(stage, 'order', 0) };
+    }
   });
 
   Object.keys(OUTROS_FUNIS_POR_ID).forEach(function (pipelineId) {
@@ -333,7 +337,7 @@ function buscarMapaFunis_() {
     var pipeline = buscarFunilPorId_(pipelineId);
     var etapas = (pipeline && (pipeline.deal_stages || pipeline.stages)) || [];
     etapas.forEach(function (etapa) {
-      if (etapa && etapa.id) mapa[etapa.id] = nomeFunil;
+      if (etapa && etapa.id) mapa[etapa.id] = { nome: nomeFunil, ordem: get_(etapa, 'order', 0) };
     });
   });
 
@@ -362,8 +366,15 @@ function nomeFunil_(deal, mapaEtapas) {
   if (aninhado) return aninhado;
 
   var stageId = get_(deal, 'deal_stage.id');
-  if (stageId && mapaEtapas[stageId]) return mapaEtapas[stageId];
+  if (stageId && mapaEtapas[stageId]) return mapaEtapas[stageId].nome;
 
+  return '';
+}
+
+/** Posição da etapa dentro do seu funil (para ordenar o funil no dashboard) */
+function ordemEtapa_(deal, mapaEtapas) {
+  var stageId = get_(deal, 'deal_stage.id');
+  if (stageId && mapaEtapas[stageId]) return mapaEtapas[stageId].ordem;
   return '';
 }
 
@@ -377,6 +388,121 @@ function escreverAba_(ss, nomeAba, headers, rows, colunasData) {
       sheet.getRange(2, coluna, rows.length, 1).setNumberFormat(FORMATO_DATA_HORA);
     });
   }
+}
+
+// ============================================================
+// DASHBOARD "GESTÃO À VISTA" (Web App)
+// ============================================================
+// Painel público (sem valores em R$) publicado como Web App do Apps Script.
+// Para publicar: no editor, "Implantar" > "Nova implantação" > tipo "App da Web".
+// Executar como: "Eu". Quem tem acesso: escolha conforme a sensibilidade
+// (ex: "Qualquer pessoa da [seu domínio]"). Isso gera uma URL fixa que pode
+// ser aberta numa TV/monitor.
+
+var FUNIS_DISPONIVEIS = ['Todos', 'Vendas Consultiva', 'Sucesso do Cliente', 'Gestão de Contratos'];
+
+// Metas do formulário de KPIs (Win Rate e Taxa de Conversão), usadas só para
+// colorir os cards do dashboard (sem expor valor financeiro nenhum).
+var METAS_KPI = {
+  winRate: { meta: 0.35, minimoAceitavel: 0.25 },
+  taxaConversao: { meta: 0.35, minimoAceitavel: 0.30 }
+};
+
+function doGet(e) {
+  return HtmlService.createTemplateFromFile('Dashboard')
+    .evaluate()
+    .setTitle('Gestão à Vista — Comercial')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/** Lê uma aba inteira e devolve como lista de objetos {cabeçalho: valor} */
+function lerAbaComoObjetos_(nomeAba) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nomeAba);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var valores = sheet.getDataRange().getValues();
+  var cabecalhos = valores[0];
+  return valores.slice(1).map(function (linha) {
+    var obj = {};
+    cabecalhos.forEach(function (cabecalho, i) { obj[cabecalho] = linha[i]; });
+    return obj;
+  });
+}
+
+function limitesPeriodo_(periodo) {
+  var agora = new Date();
+  if (periodo === 'trimestre') {
+    var inicioTrimestre = new Date(agora.getFullYear(), Math.floor(agora.getMonth() / 3) * 3, 1);
+    return { inicio: inicioTrimestre, fim: agora };
+  }
+  if (periodo === 'tudo') {
+    return { inicio: null, fim: agora };
+  }
+  var inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
+  return { inicio: inicioMes, fim: agora };
+}
+
+function dentroDoPeriodo_(data, limites) {
+  if (!(data instanceof Date)) return false;
+  if (limites.inicio && data < limites.inicio) return false;
+  if (data > limites.fim) return false;
+  return true;
+}
+
+/** Função chamada pelo dashboard (google.script.run) para buscar os dados já calculados */
+function getDadosDashboard(funilSelecionado, periodo) {
+  var deals = lerAbaComoObjetos_('Deals');
+  var tasks = lerAbaComoObjetos_('Tasks');
+  var limites = limitesPeriodo_(periodo);
+
+  if (funilSelecionado && funilSelecionado !== 'Todos') {
+    deals = deals.filter(function (d) { return d['Funil'] === funilSelecionado; });
+  }
+
+  var abertos = deals.filter(function (d) { return d['Status Negociação'] === 'Em andamento'; });
+  var vendidosPeriodo = deals.filter(function (d) {
+    return d['Status Negociação'] === 'Vendida' && dentroDoPeriodo_(d['Última Atualização'], limites);
+  });
+  var perdidosPeriodo = deals.filter(function (d) {
+    return d['Status Negociação'] === 'Perdida' && dentroDoPeriodo_(d['Última Atualização'], limites);
+  });
+  var criadosPeriodo = deals.filter(function (d) { return dentroDoPeriodo_(d['Data de Criação'], limites); });
+  var vendidosCriadosPeriodo = criadosPeriodo.filter(function (d) { return d['Status Negociação'] === 'Vendida'; });
+
+  var fechadosPeriodo = vendidosPeriodo.length + perdidosPeriodo.length;
+  var winRate = fechadosPeriodo > 0 ? vendidosPeriodo.length / fechadosPeriodo : 0;
+  var taxaConversao = criadosPeriodo.length > 0 ? vendidosCriadosPeriodo.length / criadosPeriodo.length : 0;
+
+  var porEtapa = {};
+  abertos.forEach(function (d) {
+    var etapa = d['Estágio'] || 'Sem etapa';
+    var ordem = Number(d['Ordem Etapa']) || 0;
+    if (!porEtapa[etapa]) porEtapa[etapa] = { etapa: etapa, ordem: ordem, quantidade: 0 };
+    porEtapa[etapa].quantidade++;
+  });
+  var funil = Object.keys(porEtapa)
+    .map(function (k) { return porEtapa[k]; })
+    .sort(function (a, b) { return a.ordem - b.ordem; });
+
+  var tarefasPendentes = tasks.filter(function (t) { return t['Feito'] === false; });
+  var hoje = new Date();
+  var tarefasAtrasadas = tarefasPendentes.filter(function (t) {
+    return t['Data'] instanceof Date && t['Data'] < hoje;
+  });
+
+  return {
+    atualizadoEm: Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm'),
+    funisDisponiveis: FUNIS_DISPONIVEIS,
+    metas: METAS_KPI,
+    negociosAbertos: abertos.length,
+    negociosVendidos: vendidosPeriodo.length,
+    negociosPerdidos: perdidosPeriodo.length,
+    winRate: winRate,
+    taxaConversao: taxaConversao,
+    tarefasPendentes: tarefasPendentes.length,
+    tarefasAtrasadas: tarefasAtrasadas.length,
+    funil: funil
+  };
 }
 
 /** Cria um gatilho para rodar sincronizarRDStation automaticamente a cada hora */
