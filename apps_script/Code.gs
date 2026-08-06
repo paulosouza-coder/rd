@@ -44,7 +44,43 @@ function onOpen() {
     .addItem('Sincronizar agora', 'sincronizarRDStation')
     .addItem('Configurar token da API', 'configurarToken')
     .addItem('Agendar sincronização automática (1x por hora)', 'criarGatilhoHorario')
+    .addItem('Depurar estrutura da API (ver Logs)', 'depurarEstrutura_')
     .addToUi();
+}
+
+/**
+ * Busca a primeira página de deals, tasks, deal_stages e organizations e
+ * despeja a estrutura bruta no Log de execução, para conferir os nomes
+ * reais dos campos (ex: onde fica o funil/pipeline, campos personalizados,
+ * classificação de saúde da conta) direto na sua conta do RD Station.
+ * Rode e veja o resultado em: editor do Apps Script > "Execuções" (ícone
+ * de lista à esquerda) ou Ver > Registros de execução.
+ */
+function depurarEstrutura_() {
+  var token = getToken_();
+
+  function primeiraPagina_(endpoint, key) {
+    try {
+      var url = BASE_URL + endpoint + '?page=1&token=' + encodeURIComponent(token);
+      var response = UrlFetchApp.fetch(url, { method: 'get', contentType: 'application/json', muteHttpExceptions: true });
+      var body = JSON.parse(response.getContentText());
+      return key ? body[key] : body;
+    } catch (e) {
+      return { erro: 'Não foi possível buscar "' + endpoint + '": ' + e.message };
+    }
+  }
+
+  var deals = primeiraPagina_('deals', 'deals');
+  var tasks = primeiraPagina_('tasks', 'tasks');
+  var stages = primeiraPagina_('deal_stages', 'deal_stages');
+  var orgs = primeiraPagina_('organizations', 'organizations');
+
+  Logger.log('===== EXEMPLO DE DEAL =====\n' + JSON.stringify((deals && deals[0]) || deals, null, 2));
+  Logger.log('===== EXEMPLO DE TASK =====\n' + JSON.stringify((tasks && tasks[0]) || tasks, null, 2));
+  Logger.log('===== ETAPAS DE FUNIL (deal_stages) =====\n' + JSON.stringify(stages, null, 2));
+  Logger.log('===== EXEMPLO DE ORGANIZAÇÃO =====\n' + JSON.stringify((orgs && orgs[0]) || orgs, null, 2));
+
+  SpreadsheetApp.getUi().alert('Depuração concluída! No editor do Apps Script, abra "Execuções" (ícone de lista à esquerda) para ver os dados coletados.');
 }
 
 function configurarToken() {
@@ -170,6 +206,8 @@ function escreverDeals_(ss, deals) {
     'Organização', 'Endereço', 'Usuário Responsável', 'Email Usuário', 'Funil', 'Estágio',
     'Status Negociação', 'Fonte', 'Campanha', 'Próxima Tarefa', 'Data Próxima Tarefa'];
 
+  var mapaEtapas = buscarMapaFunis_();
+
   // Descobre dinamicamente todos os labels de campos personalizados usados nos deals
   var customLabels = [];
   var seen = {};
@@ -196,7 +234,7 @@ function escreverDeals_(ss, deals) {
       get_(deal, 'organization.address'),
       get_(deal, 'user.name'),
       get_(deal, 'user.email'),
-      get_(deal, 'deal_stage.deal_pipeline.name'),
+      nomeFunil_(deal, mapaEtapas),
       get_(deal, 'deal_stage.name'),
       statusNegociacao_(deal),
       get_(deal, 'deal_source.name'),
@@ -226,6 +264,33 @@ function statusNegociacao_(deal) {
   if (deal.win === true) return 'Vendida';
   if (deal.win === false || get_(deal, 'deal_lost_reason.name')) return 'Perdida';
   return 'Em andamento';
+}
+
+/** Mapa id_da_etapa -> nome do funil, resolvido via /deal_stages (fallback para quando o
+ *  funil não vem aninhado diretamente no deal). */
+function buscarMapaFunis_() {
+  var stages = fetchAllPages_('deal_stages', 'deal_stages');
+  var mapa = {};
+  (stages || []).forEach(function (stage) {
+    var nomeFunil = get_(stage, 'deal_pipeline.name') || get_(stage, 'deal_pipeline_name');
+    if (stage && stage.id && nomeFunil) mapa[stage.id] = nomeFunil;
+  });
+  return mapa;
+}
+
+/** Tenta descobrir o nome do funil do deal em diferentes formatos possíveis da API,
+ *  usando o mapa de etapas como último recurso. */
+function nomeFunil_(deal, mapaEtapas) {
+  var direto = get_(deal, 'deal_pipeline.name');
+  if (direto) return direto;
+
+  var aninhado = get_(deal, 'deal_stage.deal_pipeline.name');
+  if (aninhado) return aninhado;
+
+  var stageId = get_(deal, 'deal_stage.id');
+  if (stageId && mapaEtapas[stageId]) return mapaEtapas[stageId];
+
+  return '';
 }
 
 function escreverAba_(ss, nomeAba, headers, rows, colunasData) {
