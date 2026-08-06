@@ -42,8 +42,13 @@ Os arquivos estão em [`apps_script/`](apps_script/):
 
 1. Na planilha do Google Sheets, abra **Extensões > Apps Script**.
 2. Cole o conteúdo de `apps_script/Code.gs` no editor (arquivo `Code.gs`).
-3. Rode a função `configurarToken` uma vez para salvar o token da API do RD
-   Station (guardado em Script Properties, não fica no código).
+3. Defina o token da API do RD Station de uma das duas formas:
+   - **Mais simples**: cole o token direto na linha `var RD_API_TOKEN = '';`
+     no topo do arquivo (fica visível a quem acessar o script — não
+     compartilhe esse arquivo preenchido).
+   - **Mais segura**: deixe `RD_API_TOKEN` vazio e rode a função
+     `configurarToken` uma vez — ela pede o token por uma caixa de diálogo e
+     guarda em Script Properties, fora do código-fonte.
 4. Rode `sincronizarRDStation` uma vez manualmente para autorizar o script.
 5. Rode `criarGatilhoHorario` para agendar a sincronização automática (a cada
    hora).

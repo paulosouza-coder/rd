@@ -17,6 +17,24 @@
  *    ações, caso queira rodar manualmente depois.
  */
 
+// ============================================================
+// CONFIGURAÇÃO
+// ============================================================
+// Cole seu token do RD Station CRM na linha abaixo, entre as aspas, SE
+// preferir deixá-lo fixo aqui no código (mais simples de configurar).
+// Ex: var RD_API_TOKEN = 'a1b2c3d4e5';
+//
+// Atenção: quem tiver acesso a este projeto do Apps Script (ou a uma cópia
+// deste arquivo) consegue ver o token em texto puro. Não cole o token em
+// nenhum lugar fora daqui (chat, repositório Git, etc).
+//
+// Se preferir não deixar o token fixo no código, deixe esta linha vazia
+// (''): o script vai pedir o token por uma caixa de diálogo na primeira
+// vez que rodar (menu "RD Station > Configurar token da API"), e vai
+// guardá-lo separado do código, no Script Properties do Google.
+var RD_API_TOKEN = '';
+// ============================================================
+
 var BASE_URL = 'https://crm.rdstation.com/api/v1/';
 var TOKEN_PROPERTY = 'RD_API_TOKEN';
 
@@ -43,9 +61,11 @@ function configurarToken() {
 }
 
 function getToken_() {
+  if (RD_API_TOKEN) return RD_API_TOKEN;
+
   var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
   if (!token) {
-    throw new Error('Token da API não configurado. Rode "RD Station > Configurar token da API" primeiro.');
+    throw new Error('Token da API não configurado. Preencha RD_API_TOKEN no topo do código, ou rode "RD Station > Configurar token da API" primeiro.');
   }
   return token;
 }
