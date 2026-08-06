@@ -30,6 +30,25 @@ Antes de rodar o script, você precisará de algumas bibliotecas e configurar cr
    Instale essas dependências usando pip:
    ```bash
    pip install pandas gspread google-auth
+   ```
+
+## ☁️ Alternativa: Google Apps Script (sem servidor, sem custo)
+
+Em vez de rodar os scripts Python localmente, é possível manter a planilha
+sincronizada automaticamente usando o Google Apps Script, direto na planilha
+do Google Sheets — sem depender de máquina local e sem custo.
+
+Os arquivos estão em [`apps_script/`](apps_script/):
+
+1. Na planilha do Google Sheets, abra **Extensões > Apps Script**.
+2. Cole o conteúdo de `apps_script/Code.gs` no editor (arquivo `Code.gs`).
+3. Rode a função `configurarToken` uma vez para salvar o token da API do RD
+   Station (guardado em Script Properties, não fica no código).
+4. Rode `sincronizarRDStation` uma vez manualmente para autorizar o script.
+5. Rode `criarGatilhoHorario` para agendar a sincronização automática (a cada
+   hora).
+
+Recarregue a planilha para ver o menu **RD Station** com essas ações.
 
 
 
