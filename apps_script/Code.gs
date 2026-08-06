@@ -81,6 +81,12 @@ function depurarFunis_() {
   Logger.log('===== TODAS AS ETAPAS RETORNADAS POR /deal_stages (total: ' + stages.length + ') =====');
   Logger.log(JSON.stringify(stages, null, 2));
 
+  Object.keys(OUTROS_FUNIS_POR_ID).forEach(function (pipelineId) {
+    var pipeline = buscarFunilPorId_(pipelineId);
+    Logger.log('===== GET /deal_pipelines/' + pipelineId + ' (' + OUTROS_FUNIS_POR_ID[pipelineId] + ') =====');
+    Logger.log(JSON.stringify(pipeline, null, 2));
+  });
+
   SpreadsheetApp.getUi().alert('Diagnóstico concluído! Veja o resultado em "Execuções" no editor do Apps Script e me envie o conteúdo.');
 }
 
@@ -302,16 +308,48 @@ function statusNegociacao_(deal) {
   return 'Em andamento';
 }
 
-/** Mapa id_da_etapa -> nome do funil, resolvido via /deal_stages (fallback para quando o
- *  funil não vem aninhado diretamente no deal). */
+// /deal_stages sem filtro só retorna as etapas do funil "padrão" da conta (confirmado por
+// depuração). Os demais funis precisam ser buscados explicitamente por ID via
+// /deal_pipelines/{id}. IDs específicos desta conta RD Station:
+var OUTROS_FUNIS_POR_ID = {
+  '67cb2f7d04bf6d00167e4fc4': 'Sucesso do Cliente',
+  '67df427fb6a6ee0028d86cae': 'Gestão de Contratos'
+};
+
+/** Mapa id_da_etapa -> nome do funil, cobrindo o funil padrão (via /deal_stages) e os
+ *  demais funis da conta (via /deal_pipelines/{id}), como fallback para quando o funil
+ *  não vem aninhado diretamente no deal. */
 function buscarMapaFunis_() {
-  var stages = fetchAllPages_('deal_stages', 'deal_stages');
   var mapa = {};
-  (stages || []).forEach(function (stage) {
+
+  var stagesPadrao = fetchAllPages_('deal_stages', 'deal_stages');
+  (stagesPadrao || []).forEach(function (stage) {
     var nomeFunil = get_(stage, 'deal_pipeline.name') || get_(stage, 'deal_pipeline_name');
     if (stage && stage.id && nomeFunil) mapa[stage.id] = nomeFunil;
   });
+
+  Object.keys(OUTROS_FUNIS_POR_ID).forEach(function (pipelineId) {
+    var nomeFunil = OUTROS_FUNIS_POR_ID[pipelineId];
+    var pipeline = buscarFunilPorId_(pipelineId);
+    var etapas = (pipeline && (pipeline.deal_stages || pipeline.stages)) || [];
+    etapas.forEach(function (etapa) {
+      if (etapa && etapa.id) mapa[etapa.id] = nomeFunil;
+    });
+  });
+
   return mapa;
+}
+
+/** Busca um funil específico por ID (GET /deal_pipelines/{id}) */
+function buscarFunilPorId_(pipelineId) {
+  var token = getToken_();
+  var url = BASE_URL + 'deal_pipelines/' + encodeURIComponent(pipelineId) + '?token=' + encodeURIComponent(token);
+  var response = UrlFetchApp.fetch(url, { method: 'get', contentType: 'application/json', muteHttpExceptions: true });
+  try {
+    return JSON.parse(response.getContentText());
+  } catch (e) {
+    return null;
+  }
 }
 
 /** Tenta descobrir o nome do funil do deal em diferentes formatos possíveis da API,
